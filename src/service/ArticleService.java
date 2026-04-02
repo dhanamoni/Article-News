@@ -15,7 +15,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 public class ArticleService {
     private final ArticleRepository articleRepository;
@@ -36,9 +35,9 @@ public class ArticleService {
         for (ApiArticleRecord record : apiArticles) {
             if (articleRepository.save(record.toArticle())) {
                 savedCount++;
-                Optional<Category> category = categoryRepository.findByName(record.categoryName());
+                Optional<Category> category = categoryRepository.findByName(record.getCategoryName());
                 category.ifPresent(value -> articleCategoryRepository.save(
-                        new ArticleCategory(value.getCategoryId(), record.articleId())));
+                        new ArticleCategory(value.getCategoryId(), record.getArticleId())));
             }
         }
         return savedCount;
@@ -54,15 +53,30 @@ public class ArticleService {
 
     public List<ArticleView> searchByKeyword(String keyword) {
         String normalizedKeyword = keyword.toLowerCase(Locale.ENGLISH);
-        List<Article> filtered = articleRepository.findAll().stream()
-                .filter(article ->
-                        matchesKeyword(article.getArticleName(), normalizedKeyword)
-                                || matchesKeyword(article.getAuthor(), normalizedKeyword)
-                                || matchesKeyword(article.getSource(), normalizedKeyword)
-                                || matchesKeyword(article.getArticleId(), normalizedKeyword)
-                                || getCategoryNames(article.getArticleId()).stream()
-                                .anyMatch(category -> matchesKeyword(category, normalizedKeyword)))
-                .collect(Collectors.toList());
+        List<Article> filtered = new ArrayList<>();
+        List<Article> allArticles = articleRepository.findAll();
+
+        for (Article article : allArticles) {
+            boolean matches = matchesKeyword(article.getArticleName(), normalizedKeyword)
+                    || matchesKeyword(article.getAuthor(), normalizedKeyword)
+                    || matchesKeyword(article.getSource(), normalizedKeyword)
+                    || matchesKeyword(article.getArticleId(), normalizedKeyword);
+
+            if (!matches) {
+                List<String> categoryNames = getCategoryNames(article.getArticleId());
+                for (String categoryName : categoryNames) {
+                    if (matchesKeyword(categoryName, normalizedKeyword)) {
+                        matches = true;
+                        break;
+                    }
+                }
+            }
+
+            if (matches) {
+                filtered.add(article);
+            }
+        }
+
         return buildViews(filtered);
     }
 
@@ -72,22 +86,32 @@ public class ArticleService {
             return new ArrayList<>();
         }
 
-        List<String> articleIds = articleCategoryRepository.findByCategoryId(category.get().getCategoryId()).stream()
-                .map(ArticleCategory::getArticleId)
-                .collect(Collectors.toList());
+        List<String> articleIds = new ArrayList<>();
+        List<ArticleCategory> mappings = articleCategoryRepository.findByCategoryId(category.get().getCategoryId());
+        for (ArticleCategory item : mappings) {
+            articleIds.add(item.getArticleId());
+        }
 
-        List<Article> filtered = articleRepository.findAll().stream()
-                .filter(article -> articleIds.contains(article.getArticleId()))
-                .collect(Collectors.toList());
+        List<Article> filtered = new ArrayList<>();
+        List<Article> allArticles = articleRepository.findAll();
+        for (Article article : allArticles) {
+            if (articleIds.contains(article.getArticleId())) {
+                filtered.add(article);
+            }
+        }
         return buildViews(filtered);
     }
 
     public List<ArticleView> filterByDate(String dateInput) {
         try {
             Date targetDate = dateFormat.parse(dateInput);
-            List<Article> filtered = articleRepository.findAll().stream()
-                    .filter(article -> isSameDay(article.getReleaseDate(), targetDate))
-                    .collect(Collectors.toList());
+            List<Article> filtered = new ArrayList<>();
+            List<Article> allArticles = articleRepository.findAll();
+            for (Article article : allArticles) {
+                if (isSameDay(article.getReleaseDate(), targetDate)) {
+                    filtered.add(article);
+                }
+            }
             return buildViews(filtered);
         } catch (ParseException exception) {
             return new ArrayList<>();
@@ -96,9 +120,13 @@ public class ArticleService {
 
     public List<ArticleView> filterByCategoryAndDate(String categoryName, String dateInput) {
         List<ArticleView> byCategory = filterByCategory(categoryName);
-        return byCategory.stream()
-                .filter(articleView -> articleView.releaseDate().equals(dateInput))
-                .collect(Collectors.toList());
+        List<ArticleView> result = new ArrayList<>();
+        for (ArticleView articleView : byCategory) {
+            if (articleView.getReleaseDate().equals(dateInput)) {
+                result.add(articleView);
+            }
+        }
+        return result;
     }
 
     public List<ArticleView> filterArticles(String keyword, String categoryName, String dateInput) {
@@ -106,30 +134,53 @@ public class ArticleService {
 
         if (keyword != null && !keyword.isBlank()) {
             String normalizedKeyword = keyword.toLowerCase(Locale.ENGLISH);
-            filteredArticles = filteredArticles.stream()
-                    .filter(article ->
-                            matchesKeyword(article.articleName(), normalizedKeyword)
-                                    || matchesKeyword(article.author(), normalizedKeyword)
-                                    || matchesKeyword(article.source(), normalizedKeyword)
-                                    || matchesKeyword(article.articleId(), normalizedKeyword)
-                                    || article.categories().stream().anyMatch(category -> matchesKeyword(category, normalizedKeyword)))
-                    .collect(Collectors.toList());
+            List<ArticleView> keywordFiltered = new ArrayList<>();
+            for (ArticleView article : filteredArticles) {
+                boolean matches = matchesKeyword(article.getArticleId(), normalizedKeyword)
+                        || matchesKeyword(article.getArticleName(), normalizedKeyword)
+                        || matchesKeyword(article.getAuthor(), normalizedKeyword)
+                        || matchesKeyword(article.getSource(), normalizedKeyword);
+
+                if (!matches) {
+                    for (String category : article.getCategories()) {
+                        if (matchesKeyword(category, normalizedKeyword)) {
+                            matches = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (matches) {
+                    keywordFiltered.add(article);
+                }
+            }
+            filteredArticles = keywordFiltered;
         }
 
         if (categoryName != null && !categoryName.isBlank()) {
-            filteredArticles = filteredArticles.stream()
-                    .filter(article -> article.categories().stream()
-                            .anyMatch(category -> category.equalsIgnoreCase(categoryName)))
-                    .collect(Collectors.toList());
+            List<ArticleView> categoryFiltered = new ArrayList<>();
+            for (ArticleView article : filteredArticles) {
+                for (String category : article.getCategories()) {
+                    if (category.equalsIgnoreCase(categoryName)) {
+                        categoryFiltered.add(article);
+                        break;
+                    }
+                }
+            }
+            filteredArticles = categoryFiltered;
         }
 
         if (dateInput != null && !dateInput.isBlank()) {
             try {
                 Date targetDate = dateFormat.parse(dateInput);
                 String normalizedDate = dateFormat.format(targetDate);
-                filteredArticles = filteredArticles.stream()
-                        .filter(article -> article.releaseDate().equals(normalizedDate))
-                        .collect(Collectors.toList());
+                List<ArticleView> dateFiltered = new ArrayList<>();
+                for (ArticleView article : filteredArticles) {
+                    if (article.getReleaseDate().equals(normalizedDate)) {
+                        dateFiltered.add(article);
+                    }
+                }
+                filteredArticles = dateFiltered;
             } catch (ParseException exception) {
                 return new ArrayList<>();
             }
@@ -175,26 +226,36 @@ public class ArticleService {
     }
 
     private List<ArticleView> buildViews(List<Article> articles) {
-        return articles.stream()
-                .sorted(Comparator.comparing(Article::getReleaseDate).reversed())
-                .map(article -> new ArticleView(
-                        article.getArticleId(),
-                        article.getArticleName(),
-                        article.getAuthor(),
-                        dateFormat.format(article.getReleaseDate()),
-                        article.getArticleUrl(),
-                        article.getSource(),
-                        getCategoryNames(article.getArticleId())))
-                .collect(Collectors.toList());
+        List<Article> sortedArticles = new ArrayList<>(articles);
+        sortedArticles.sort(Comparator.comparing(Article::getReleaseDate).reversed());
+
+        List<ArticleView> views = new ArrayList<>();
+        for (Article article : sortedArticles) {
+            ArticleView view = new ArticleView(
+                    article.getArticleId(),
+                    article.getArticleName(),
+                    article.getAuthor(),
+                    dateFormat.format(article.getReleaseDate()),
+                    article.getArticleUrl(),
+                    article.getSource(),
+                    getCategoryNames(article.getArticleId()));
+            views.add(view);
+        }
+        return views;
     }
 
     private List<String> getCategoryNames(String articleId) {
-        return articleCategoryRepository.findByArticleId(articleId).stream()
-                .map(ArticleCategory::getCategoryId)
-                .map(categoryRepository::findById)
-                .filter(Optional::isPresent)
-                .map(optionalCategory -> optionalCategory.get().getCategoryName())
-                .collect(Collectors.toList());
+        List<String> categoryNames = new ArrayList<>();
+        List<ArticleCategory> mappings = articleCategoryRepository.findByArticleId(articleId);
+
+        for (ArticleCategory mapping : mappings) {
+            Optional<Category> category = categoryRepository.findById(mapping.getCategoryId());
+            if (category.isPresent()) {
+                categoryNames.add(category.get().getCategoryName());
+            }
+        }
+
+        return categoryNames;
     }
 
     private boolean isSameDay(Date firstDate, Date secondDate) {
@@ -205,31 +266,7 @@ public class ArticleService {
         if (value == null || value.isBlank()) {
             return false;
         }
-        String normalizedValue = value.toLowerCase(Locale.ENGLISH);
-        if (normalizedValue.contains(keyword)) {
-            return true;
-        }
-
-        String[] valueTokens = normalizedValue.split("[^a-z0-9]+");
-        String[] keywordTokens = keyword.toLowerCase(Locale.ENGLISH).split("[^a-z0-9]+");
-        for (String keywordToken : keywordTokens) {
-            if (keywordToken.isBlank()) {
-                continue;
-            }
-
-            for (String valueToken : valueTokens) {
-                if (valueToken.equals(keywordToken) || valueToken.startsWith(keywordToken)) {
-                    return true;
-                }
-            }
-        }
-
-        for (String valueToken : valueTokens) {
-            if (valueToken.equals(keyword) || valueToken.startsWith(keyword)) {
-                return true;
-            }
-        }
-        return false;
+        return value.toLowerCase(Locale.ENGLISH).contains(keyword);
     }
 
     private void replaceCategoryLink(String articleId, String categoryId) {
@@ -237,26 +274,105 @@ public class ArticleService {
         articleCategoryRepository.save(new ArticleCategory(categoryId, articleId));
     }
 
-    public record ApiArticleRecord(
-            String articleId,
-            String articleName,
-            String author,
-            Date releaseDate,
-            String articleUrl,
-            String source,
-            String categoryName) {
+    public static class ApiArticleRecord {
+        private final String articleId;
+        private final String articleName;
+        private final String author;
+        private final Date releaseDate;
+        private final String articleUrl;
+        private final String source;
+        private final String categoryName;
+
+        public ApiArticleRecord(String articleId, String articleName, String author, Date releaseDate,
+                                String articleUrl, String source, String categoryName) {
+            this.articleId = articleId;
+            this.articleName = articleName;
+            this.author = author;
+            this.releaseDate = releaseDate;
+            this.articleUrl = articleUrl;
+            this.source = source;
+            this.categoryName = categoryName;
+        }
+
+        public String getArticleId() {
+            return articleId;
+        }
+
+        public String getArticleName() {
+            return articleName;
+        }
+
+        public String getAuthor() {
+            return author;
+        }
+
+        public Date getReleaseDate() {
+            return releaseDate;
+        }
+
+        public String getArticleUrl() {
+            return articleUrl;
+        }
+
+        public String getSource() {
+            return source;
+        }
+
+        public String getCategoryName() {
+            return categoryName;
+        }
+
         public Article toArticle() {
             return new Article(articleId, articleName, author, releaseDate, articleUrl, source);
         }
     }
 
-    public record ArticleView(
-            String articleId,
-            String articleName,
-            String author,
-            String releaseDate,
-            String articleUrl,
-            String source,
-            List<String> categories) {
+    public static class ArticleView {
+        private final String articleId;
+        private final String articleName;
+        private final String author;
+        private final String releaseDate;
+        private final String articleUrl;
+        private final String source;
+        private final List<String> categories;
+
+        public ArticleView(String articleId, String articleName, String author, String releaseDate,
+                           String articleUrl, String source, List<String> categories) {
+            this.articleId = articleId;
+            this.articleName = articleName;
+            this.author = author;
+            this.releaseDate = releaseDate;
+            this.articleUrl = articleUrl;
+            this.source = source;
+            this.categories = categories;
+        }
+
+        public String getArticleId() {
+            return articleId;
+        }
+
+        public String getArticleName() {
+            return articleName;
+        }
+
+        public String getAuthor() {
+            return author;
+        }
+
+        public String getReleaseDate() {
+            return releaseDate;
+        }
+
+        public String getArticleUrl() {
+            return articleUrl;
+        }
+
+        public String getSource() {
+            return source;
+        }
+
+        public List<String> getCategories() {
+            return categories;
+        }
     }
 }

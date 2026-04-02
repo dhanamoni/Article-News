@@ -50,35 +50,37 @@ public class Main {
 
         String command = args[0].toLowerCase(Locale.ENGLISH);
         switch (command) {
-            case "latest" -> printArticles(articleService.getLatestArticles());
-            case "fetch" -> {
+            case "latest":
+                printArticles(articleService.getLatestArticles());
+                break;
+            case "fetch":
                 int newArticles = articleService.fetchLatestBatch(loadIncrementalMockApiData());
                 fileDataStore.saveAll(articleRepository, categoryRepository, articleCategoryRepository, userRepository);
                 System.out.println("Fetched and stored new articles: " + newArticles);
                 System.out.println("Articles in database: " + articleService.getStoredArticleCount());
-            }
-            case "search" -> {
+                break;
+            case "search":
                 if (args.length < 2) {
                     System.out.println("Usage: java Main search <keyword>");
                     return;
                 }
                 printArticles(articleService.searchByKeyword(joinArgs(args, 1)));
-            }
-            case "category" -> {
+                break;
+            case "category":
                 if (args.length < 2) {
                     System.out.println("Usage: java Main category <categoryName>");
                     return;
                 }
                 printArticles(articleService.filterByCategory(joinArgs(args, 1)));
-            }
-            case "date" -> {
+                break;
+            case "date":
                 if (args.length < 2) {
                     System.out.println("Usage: java Main date <yyyy-MM-dd>");
                     return;
                 }
                 printArticles(articleService.filterByDate(args[1]));
-            }
-            case "filter" -> {
+                break;
+            case "filter":
                 if (args.length < 2) {
                     System.out.println("Usage: java Main filter [keyword=<text>] [category=<name>] [date=<yyyy-MM-dd>]");
                     return;
@@ -99,8 +101,8 @@ public class Main {
                 }
 
                 printArticles(articleService.filterArticles(keyword, category, date));
-            }
-            case "update" -> {
+                break;
+            case "update":
                 if (args.length < 8) {
                     System.out.println("Usage: java Main update <articleId> <title> <author> <yyyy-MM-dd> <url> <source> <categoryName>");
                     System.out.println("Use quotes for values containing spaces.");
@@ -121,10 +123,14 @@ public class Main {
                 System.out.println(updated
                         ? "Article updated successfully."
                         : "Article update failed. Check article ID, category, date, or duplicate URL.");
-            }
-            case "categories" -> categoryService.getCategoryList()
-                    .forEach(category -> System.out.println(category.getCategoryId() + " - " + category.getCategoryName()));
-            default -> printHelp(savedCount, articleService.getStoredArticleCount(), categoryService.getCategoryList());
+                break;
+            case "categories":
+                categoryService.getCategoryList()
+                        .forEach(item -> System.out.println(item.getCategoryId() + " - " + item.getCategoryName()));
+                break;
+            default:
+                printHelp(savedCount, articleService.getStoredArticleCount(), categoryService.getCategoryList());
+                break;
         }
     }
 
@@ -155,13 +161,13 @@ public class Main {
         }
 
         for (ArticleService.ArticleView article : articles) {
-            System.out.println("ID: " + article.articleId());
-            System.out.println("Title: " + article.articleName());
-            System.out.println("Author: " + article.author());
-            System.out.println("Date: " + article.releaseDate());
-            System.out.println("Source: " + article.source());
-            System.out.println("URL: " + article.articleUrl());
-            System.out.println("Category: " + String.join(", ", article.categories()));
+            System.out.println("ID: " + article.getArticleId());
+            System.out.println("Title: " + article.getArticleName());
+            System.out.println("Author: " + article.getAuthor());
+            System.out.println("Date: " + article.getReleaseDate());
+            System.out.println("Source: " + article.getSource());
+            System.out.println("URL: " + article.getArticleUrl());
+            System.out.println("Category: " + String.join(", ", article.getCategories()));
             System.out.println();
         }
     }
